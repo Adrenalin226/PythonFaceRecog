@@ -5,7 +5,6 @@ import onnxruntime as ort
 from ultralytics import YOLO
 
 
-# ------------ Визначення пози (по скелету) ----------------
 def determine_pose(keypoints):
     try:
         shoulder_y = (keypoints[5][1] + keypoints[6][1]) / 2
@@ -24,13 +23,9 @@ def determine_pose(keypoints):
     return "Standing"
 
 
-# ------------ Підготовка гендер-моделі (ONNX) -------------
+
 def init_gender_model(onnx_path="gender_googlenet.onnx"):
-    """
-    GoogleNet age/gender модель з onnx/models:
-    - вхід: 1x3x224x224, BGR
-    - треба відняти mean [104,117,123]
-    """
+
     try:
         sess = ort.InferenceSession(
             onnx_path,
@@ -53,10 +48,7 @@ def softmax(x):
 
 
 def predict_gender(face_bgr, sess, input_name, output_name):
-    """
-    face_bgr: зріз обличчя (BGR)
-    Повертає (gender_str, confidence_percent)
-    """
+
     if sess is None or face_bgr is None or face_bgr.size == 0:
         return "Unknown", 0.0
 
@@ -75,7 +67,7 @@ def predict_gender(face_bgr, sess, input_name, output_name):
         outputs = sess.run([output_name], {input_name: img})[0]  # shape (1,2)
         probs = softmax(outputs[0])  # [p0, p1]
 
-        # За прикладом з документації: [p_male, p_female]
+
         p_male = float(probs[0])
         p_female = float(probs[1])
 
@@ -92,12 +84,11 @@ def predict_gender(face_bgr, sess, input_name, output_name):
         return "Unknown", 0.0
 
 
-# ------------ Головна функція ---------------
 def main():
-    # Модель поз (YOLOv8 pose)
-    pose_model = YOLO("yolov8n-pose.pt")   # або "yolov8n-pose", якщо .pt нема
 
-    # Модель визначення статі (ONNX)
+    pose_model = YOLO("yolov8n-pose.pt")
+
+
     gender_sess, gender_in, gender_out = init_gender_model("gender_googlenet.onnx")
 
     cap = cv2.VideoCapture(0)
@@ -105,7 +96,7 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     next_id = 0
-    tracked = {}  # person_id -> (x_center, y_center)
+    tracked = {}
 
     print("[INFO] Running... Press Q to exit")
 
@@ -114,7 +105,7 @@ def main():
         if not ret:
             break
 
-        # для YOLO робимо квадрат 640x640
+
         small = cv2.resize(frame, (640, 640))
         results = pose_model(small, verbose=False)
 
@@ -133,7 +124,7 @@ def main():
                 x1_s, y1_s = int(xs.min()), int(ys.min())
                 x2_s, y2_s = int(xs.max()), int(ys.max())
 
-                # масштаб назад в оригінальний кадр
+
                 scale_x = frame.shape[1] / 640.0
                 scale_y = frame.shape[0] / 640.0
 
@@ -145,7 +136,7 @@ def main():
                 cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
                 new_positions.append((cx, cy, xy, x1, y1, x2, y2))
 
-        # відстеження ID по близькості центрів
+
         for (cx, cy, xy, x1, y1, x2, y2) in new_positions:
             min_dist = 999999
             best_id = None
@@ -164,13 +155,13 @@ def main():
 
             pose = determine_pose(xy)
 
-            # ---------- FACE ROI для моделі статі ----------
+            # ---------- FACE ROI ----------
             h = y2 - y1
             if h <= 0:
                 face_roi = None
             else:
                 fy1 = y1
-                fy2 = y1 + int(0.55 * h)  # верхня половина тіла
+                fy2 = y1 + int(0.55 * h)
                 fy1 = max(0, min(fy1, frame.shape[0] - 1))
                 fy2 = max(0, min(fy2, frame.shape[0] - 1))
                 fx1 = max(0, min(x1, frame.shape[1] - 1))
@@ -183,7 +174,7 @@ def main():
 
             gender, conf = predict_gender(face_roi, gender_sess, gender_in, gender_out)
 
-            # ---------- колір рамки по позі ----------
+
             if pose in ["Standing", "Sitting"]:
                 color = (0, 255, 0)       # зелений
             elif pose == "Bent":
